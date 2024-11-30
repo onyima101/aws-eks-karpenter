@@ -7,8 +7,8 @@ provider "aws" {
 }
 
 provider "aws" {
-    region = "us-east-1"
-    alias  = "virginia"
+  region = "us-east-1"
+  alias  = "virginia"
 }
 
 provider "helm" {
@@ -41,7 +41,7 @@ provider "kubectl" {
 
 terraform {
   backend "s3" {
-    bucket = "XXXXXXXXXXXX-bucket-state-file-karpenter"
+    bucket = "637034040440-bucket-state-file-karpenter"
     region = "us-east-1"
     key    = "karpenter.tfstate"
   }
@@ -70,7 +70,7 @@ data "aws_ecrpublic_authorization_token" "token" {
 ###############################################################################
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.13.0"
+  version = "5.16.0"
 
   name = "${var.cluster_name}-vpc"
   cidr = "10.0.0.0/16"
@@ -100,7 +100,7 @@ module "vpc" {
 ###############################################################################
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "20.24.0"
+  version = "20.30.1"
 
   cluster_name    = var.cluster_name
   cluster_version = "1.30"
@@ -171,123 +171,123 @@ module "karpenter" {
   }
 }
 
-###############################################################################
-# Karpenter Helm
-###############################################################################
-resource "helm_release" "karpenter" {
-  namespace           = "kube-system"
-  name                = "karpenter"
-  repository          = "oci://public.ecr.aws/karpenter"
-  repository_username = data.aws_ecrpublic_authorization_token.token.user_name
-  repository_password = data.aws_ecrpublic_authorization_token.token.password
-  chart               = "karpenter"
-  version             = "1.0.0"
-  wait                = false
+# ###############################################################################
+# # Karpenter Helm
+# ###############################################################################
+# resource "helm_release" "karpenter" {
+#   namespace           = "kube-system"
+#   name                = "karpenter"
+#   repository          = "oci://public.ecr.aws/karpenter"
+#   repository_username = data.aws_ecrpublic_authorization_token.token.user_name
+#   repository_password = data.aws_ecrpublic_authorization_token.token.password
+#   chart               = "karpenter"
+#   version             = "1.0.0"
+#   wait                = false
 
-  values = [
-    <<-EOT
-    serviceAccount:
-      name: ${module.karpenter.service_account}
-    settings:
-      clusterName: ${module.eks.cluster_name}
-      clusterEndpoint: ${module.eks.cluster_endpoint}
-      interruptionQueue: ${module.karpenter.queue_name}
-    EOT
-  ]
-}
+#   values = [
+#     <<-EOT
+#     serviceAccount:
+#       name: ${module.karpenter.service_account}
+#     settings:
+#       clusterName: ${module.eks.cluster_name}
+#       clusterEndpoint: ${module.eks.cluster_endpoint}
+#       interruptionQueue: ${module.karpenter.queue_name}
+#     EOT
+#   ]
+# }
 
-###############################################################################
-# Karpenter Kubectl
-###############################################################################
-resource "kubectl_manifest" "karpenter_node_pool" {
-  yaml_body = <<-YAML
-    apiVersion: karpenter.sh/v1beta1
-    kind: NodePool
-    metadata:
-      name: default
-    spec:
-      template:
-        spec:
-          nodeClassRef:
-            name: default
-          requirements:
-            - key: "karpenter.k8s.aws/instance-category"
-              operator: In
-              values: ["c", "m", "r"]
-            - key: "karpenter.k8s.aws/instance-cpu"
-              operator: In
-              values: ["4", "8", "16", "32"]
-            - key: "karpenter.k8s.aws/instance-hypervisor"
-              operator: In
-              values: ["nitro"]
-            - key: "karpenter.k8s.aws/instance-generation"
-              operator: Gt
-              values: ["2"]
-      limits:
-        cpu: 1000
-      disruption:
-        consolidationPolicy: WhenEmpty
-        consolidateAfter: 30s
-  YAML
+# ##############################################################################
+# # Karpenter Kubectl
+# ###############################################################################
+# resource "kubectl_manifest" "karpenter_node_pool" {
+#   yaml_body = <<-YAML
+#     apiVersion: karpenter.sh/v1beta1
+#     kind: NodePool
+#     metadata:
+#       name: default
+#     spec:
+#       template:
+#         spec:
+#           nodeClassRef:
+#             name: default
+#           requirements:
+#             - key: "karpenter.k8s.aws/instance-category"
+#               operator: In
+#               values: ["c", "m", "r"]
+#             - key: "karpenter.k8s.aws/instance-cpu"
+#               operator: In
+#               values: ["4", "8", "16", "32"]
+#             - key: "karpenter.k8s.aws/instance-hypervisor"
+#               operator: In
+#               values: ["nitro"]
+#             - key: "karpenter.k8s.aws/instance-generation"
+#               operator: Gt
+#               values: ["2"]
+#       limits:
+#         cpu: 1000
+#       disruption:
+#         consolidationPolicy: WhenEmpty
+#         consolidateAfter: 30s
+#   YAML
 
-  depends_on = [
-    kubectl_manifest.karpenter_node_class
-  ]
-}
+#   depends_on = [
+#     kubectl_manifest.karpenter_node_class
+#   ]
+# }
 
-resource "kubectl_manifest" "karpenter_node_class" {
-  yaml_body = <<-YAML
-    apiVersion: karpenter.k8s.aws/v1beta1
-    kind: EC2NodeClass
-    metadata:
-      name: default
-    spec:
-      amiFamily: AL2023
-      role: ${module.karpenter.node_iam_role_name}
-      subnetSelectorTerms:
-        - tags:
-            karpenter.sh/discovery: ${module.eks.cluster_name}
-      securityGroupSelectorTerms:
-        - tags:
-            karpenter.sh/discovery: ${module.eks.cluster_name}
-      tags:
-        karpenter.sh/discovery: ${module.eks.cluster_name}
-  YAML
+# resource "kubectl_manifest" "karpenter_node_class" {
+#   yaml_body = <<-YAML
+#     apiVersion: karpenter.k8s.aws/v1beta1
+#     kind: EC2NodeClass
+#     metadata:
+#       name: default
+#     spec:
+#       amiFamily: AL2023
+#       role: ${module.karpenter.node_iam_role_name}
+#       subnetSelectorTerms:
+#         - tags:
+#             karpenter.sh/discovery: ${module.eks.cluster_name}
+#       securityGroupSelectorTerms:
+#         - tags:
+#             karpenter.sh/discovery: ${module.eks.cluster_name}
+#       tags:
+#         karpenter.sh/discovery: ${module.eks.cluster_name}
+#   YAML
 
-  depends_on = [
-    helm_release.karpenter
-  ]
-}
+#   depends_on = [
+#     helm_release.karpenter
+#   ]
+# }
 
-###############################################################################
-# Inflate deployment
-###############################################################################
-resource "kubectl_manifest" "karpenter_example_deployment" {
-  yaml_body = <<-YAML
-    apiVersion: apps/v1
-    kind: Deployment
-    metadata:
-      name: inflate
-    spec:
-      replicas: 0
-      selector:
-        matchLabels:
-          app: inflate
-      template:
-        metadata:
-          labels:
-            app: inflate
-        spec:
-          terminationGracePeriodSeconds: 0
-          containers:
-            - name: inflate
-              image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
-              resources:
-                requests:
-                  cpu: 1
-  YAML
+# ###############################################################################
+# # Inflate deployment
+# ###############################################################################
+# resource "kubectl_manifest" "karpenter_example_deployment" {
+#   yaml_body = <<-YAML
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     metadata:
+#       name: inflate
+#     spec:
+#       replicas: 0
+#       selector:
+#         matchLabels:
+#           app: inflate
+#       template:
+#         metadata:
+#           labels:
+#             app: inflate
+#         spec:
+#           terminationGracePeriodSeconds: 0
+#           containers:
+#             - name: inflate
+#               image: public.ecr.aws/eks-distro/kubernetes/pause:3.7
+#               resources:
+#                 requests:
+#                   cpu: 1
+#   YAML
 
-  depends_on = [
-    helm_release.karpenter
-  ]
-}
+#   depends_on = [
+#     helm_release.karpenter
+#   ]
+# }
